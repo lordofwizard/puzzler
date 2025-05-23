@@ -48,6 +48,7 @@ const Grid = styled.div`
   padding: 1px;
   margin: 0 auto;
   max-width: 600px;
+  position: relative;
 `;
 
 const Cell = styled.div`
@@ -60,20 +61,60 @@ const Cell = styled.div`
   font-size: 1.2rem;
 `;
 
+const WordOverlay = styled.div`
+  position: absolute;
+  height: 2px;
+  background: #808080;
+  transform-origin: left center;
+  pointer-events: none;
+  z-index: 2;
+`;
+
 const Title = styled.h1`
   font-family: 'Caveat', cursive;
   color: #333;
 `;
 
+const WordList = styled.div`
+  margin: 2rem auto;
+  max-width: 600px;
+  text-align: left;
+  padding: 1rem;
+  background-color: white;
+  border-radius: 4px;
+  box-shadow: 0 0 10px rgba(0,0,0,0.1);
+`;
+
+const WordItem = styled.div`
+  display: flex;
+  align-items: center;
+  margin: 0.5rem 0;
+  font-family: 'Caveat', cursive;
+  font-size: 1.2rem;
+  
+  input[type="checkbox"] {
+    margin-right: 1rem;
+    width: 18px;
+    height: 18px;
+    cursor: pointer;
+  }
+`;
+
 function App() {
   const [words, setWords] = useState('');
   const [puzzle, setPuzzle] = useState([]);
+  const [wordPositions, setWordPositions] = useState({});
+  const [wordDirections, setWordDirections] = useState({});
+  const [foundWords, setFoundWords] = useState({});
   const puzzleRef = useRef(null);
+  const gridRef = useRef(null);
 
   const generatePuzzle = () => {
     const wordList = words.split(',').map(word => word.trim().toUpperCase());
     const gridSize = 15;
     const grid = Array(gridSize).fill().map(() => Array(gridSize).fill(''));
+    const positions = {};
+    const directions = {};
     
     // Place words in the grid
     wordList.forEach(word => {
@@ -84,7 +125,9 @@ function App() {
         const col = Math.floor(Math.random() * gridSize);
         
         if (canPlaceWord(grid, word, row, col, direction)) {
-          placeWord(grid, word, row, col, direction);
+          const wordCells = placeWord(grid, word, row, col, direction);
+          positions[word] = wordCells;
+          directions[word] = direction;
           placed = true;
         }
       }
@@ -100,6 +143,9 @@ function App() {
     }
 
     setPuzzle(grid);
+    setWordPositions(positions);
+    setWordDirections(directions);
+    setFoundWords({});
   };
 
   const canPlaceWord = (grid, word, row, col, direction) => {
@@ -136,6 +182,7 @@ function App() {
 
   const placeWord = (grid, word, row, col, direction) => {
     const wordLength = word.length;
+    const cells = [];
     
     for (let i = 0; i < wordLength; i++) {
       let newRow = row;
@@ -153,7 +200,37 @@ function App() {
       }
       
       grid[newRow][newCol] = word[i];
+      cells.push({ row: newRow, col: newCol });
     }
+    
+    return cells;
+  };
+
+  const getOverlayStyle = (word) => {
+    if (!gridRef.current || !wordPositions[word]) return {};
+    
+    const cells = wordPositions[word];
+    const direction = wordDirections[word];
+    const gridRect = gridRef.current.getBoundingClientRect();
+    const cellSize = gridRect.width / 15; // 15x15 grid
+    
+    const firstCell = cells[0];
+    const lastCell = cells[cells.length - 1];
+    
+    const startX = firstCell.col * cellSize + cellSize / 2;
+    const startY = firstCell.row * cellSize + cellSize / 2;
+    const endX = lastCell.col * cellSize + cellSize / 2;
+    const endY = lastCell.row * cellSize + cellSize / 2;
+    
+    const length = Math.sqrt(Math.pow(endX - startX, 2) + Math.pow(endY - startY, 2));
+    const angle = Math.atan2(endY - startY, endX - startX) * 180 / Math.PI;
+    
+    return {
+      width: `${length}px`,
+      left: `${startX}px`,
+      top: `${startY}px`,
+      transform: `rotate(${angle}deg)`,
+    };
   };
 
   const downloadPuzzle = async () => {
@@ -164,6 +241,13 @@ function App() {
       link.href = canvas.toDataURL();
       link.click();
     }
+  };
+
+  const handleWordFound = (word) => {
+    setFoundWords(prev => ({
+      ...prev,
+      [word]: !prev[word]
+    }));
   };
 
   return (
@@ -179,14 +263,37 @@ function App() {
       {puzzle.length > 0 && (
         <>
           <PuzzleContainer ref={puzzleRef}>
-            <Grid>
+            <Grid ref={gridRef}>
               {puzzle.map((row, i) =>
                 row.map((cell, j) => (
-                  <Cell key={`${i}-${j}`}>{cell}</Cell>
+                  <Cell key={`${i}-${j}`}>
+                    {cell}
+                  </Cell>
                 ))
+              )}
+              {Object.entries(foundWords).map(([word, found]) => 
+                found && (
+                  <WordOverlay
+                    key={word}
+                    style={getOverlayStyle(word)}
+                  />
+                )
               )}
             </Grid>
           </PuzzleContainer>
+          <WordList>
+            <h3>Words to Find:</h3>
+            {words.split(',').map((word, index) => (
+              <WordItem key={index}>
+                <input
+                  type="checkbox"
+                  checked={foundWords[word.trim().toUpperCase()] || false}
+                  onChange={() => handleWordFound(word.trim().toUpperCase())}
+                />
+                {word.trim()}
+              </WordItem>
+            ))}
+          </WordList>
           <Button onClick={downloadPuzzle}>Download Puzzle</Button>
         </>
       )}
